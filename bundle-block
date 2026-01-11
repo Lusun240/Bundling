@@ -453,49 +453,78 @@
         })
         .then(data => {
           console.log('Successfully added to cart:', data);
-          
-          // Trigger the standard theme cart update by simulating the normal flow
-          // First, trigger the button animation
+
+          // Trigger the button animation
           const addToCartButton = form.querySelector('[ref="addToCartButton"]');
           if (addToCartButton) {
             const addToCartContainer = addToCartButton.closest('add-to-cart-component');
             if (addToCartContainer) {
               addToCartContainer.setAttribute('data-added', 'true');
               addToCartButton.setAttribute('data-added', 'true');
-              
+
               setTimeout(() => {
                 addToCartContainer.removeAttribute('data-added');
                 addToCartButton.removeAttribute('data-added');
               }, 2000);
-              
-              // Trigger the component's internal success handler if it exists
-              if (typeof addToCartContainer.handleSuccess === 'function') {
-                addToCartContainer.handleSuccess(data);
-              }
             }
           }
-          
-          // Dispatch multiple cart events to ensure theme picks it up
-          document.dispatchEvent(new CustomEvent('cart:refresh'));
-          document.dispatchEvent(new CustomEvent('product:added-to-cart'));
-          
-          // Create a synthetic form submit success event
-          const successEvent = new CustomEvent('cart:item-added', { 
-            bubbles: true,
-            detail: data 
-          });
-          form.dispatchEvent(successEvent);
-          
-          // Look for cart notification or drawer elements
-          const cartNotification = document.querySelector('cart-notification');
-          if (cartNotification && typeof cartNotification.open === 'function') {
-            cartNotification.open();
-          }
-          
-          const cartDrawer = document.querySelector('cart-drawer');
-          if (cartDrawer && typeof cartDrawer.open === 'function') {
-            cartDrawer.open();
-          }
+
+          // Fetch the updated cart to get the latest state
+          return fetch('/cart.js')
+            .then(response => response.json())
+            .then(cartData => {
+              console.log('Fetched updated cart:', cartData);
+
+              // Dispatch cart refresh events with the updated cart data
+              document.dispatchEvent(new CustomEvent('cart:refresh', {
+                bubbles: true,
+                detail: cartData
+              }));
+
+              document.dispatchEvent(new CustomEvent('product:added-to-cart', {
+                bubbles: true,
+                detail: { items: data.items, cart: cartData }
+              }));
+
+              // Create a synthetic form submit success event
+              const successEvent = new CustomEvent('cart:item-added', {
+                bubbles: true,
+                detail: { items: data.items, cart: cartData }
+              });
+              form.dispatchEvent(successEvent);
+
+              // Try to open cart notification or drawer with updated cart data
+              const cartNotification = document.querySelector('cart-notification');
+              if (cartNotification) {
+                if (typeof cartNotification.setActiveElement === 'function') {
+                  cartNotification.setActiveElement(document.activeElement);
+                }
+                if (typeof cartNotification.renderContents === 'function') {
+                  cartNotification.renderContents(cartData);
+                }
+                if (typeof cartNotification.open === 'function') {
+                  cartNotification.open();
+                }
+              }
+
+              const cartDrawer = document.querySelector('cart-drawer');
+              if (cartDrawer) {
+                if (typeof cartDrawer.renderContents === 'function') {
+                  cartDrawer.renderContents(cartData);
+                }
+                if (typeof cartDrawer.open === 'function') {
+                  cartDrawer.open();
+                }
+              }
+
+              // Fallback: If no drawer/notification found, refresh the page section
+              if (!cartNotification && !cartDrawer) {
+                const cartIconBubble = document.querySelector('cart-icon-bubble');
+                if (cartIconBubble && typeof cartIconBubble.renderContents === 'function') {
+                  cartIconBubble.renderContents(cartData);
+                }
+              }
+            });
         })
         .catch(error => {
           console.error('Error adding bundle to cart:', error);
